@@ -13,7 +13,7 @@
         import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        // --- CONFIGURACIÓN FIJA ---
+        // --- CONFIGURACIÓN FIJA (NO MODIFICAR) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCojva8vXR0-aREvi-chXRp_nVoHsI57pE",
             authDomain: "aevsegu.firebaseapp.com",
@@ -23,7 +23,6 @@
             appId: "1:34531792748:web:e814648c3df8c5215f0549"
         };
 
-        // Identificador interno para rutas de base de datos
         const internalAppId = typeof __app_id !== 'undefined' ? __app_id : 'security-system-v1';
         
         const app = initializeApp(firebaseConfig);
@@ -38,18 +37,19 @@
         // --- NAVEGACIÓN ---
         const showTab = (tabId) => {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
-            document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('bg-blue-600', 'text-white'));
+            document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('bg-blue-700', 'text-white'));
             
             const targetTab = document.getElementById(tabId);
             const targetBtn = document.getElementById('btn-' + tabId);
             
             if (targetTab) targetTab.classList.remove('hidden');
-            if (targetBtn) targetBtn.classList.add('bg-blue-600', 'text-white');
+            if (targetBtn) targetBtn.classList.add('bg-blue-700', 'text-white');
             
             const titles = {
                 'dashboard': 'Panel Principal',
+                'today-logs': 'Registros de Hoy',
                 'entry-management': 'Gestión de Accesos',
-                'reports': 'Reportes y Exportación'
+                'reports': 'Historial Completo'
             };
             const titleEl = document.getElementById('current-tab-title');
             if (titleEl) titleEl.innerText = titles[tabId];
@@ -61,8 +61,6 @@
                 await signInAnonymously(auth);
             } catch (error) {
                 console.error("Auth Error", error);
-                const statusEl = document.getElementById('db-status');
-                if (statusEl) statusEl.innerHTML = `<span class="text-red-400">Error Auth</span>`;
             }
         };
 
@@ -72,34 +70,25 @@
                 const statusEl = document.getElementById('db-status');
                 if (statusEl) {
                     statusEl.innerHTML = `
-                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                        <span class="text-green-400">Nube Conectada</span>
+                        <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                        <span class="text-green-400">Sincronizado</span>
                     `;
                 }
                 setupListeners();
             }
         });
 
-        // --- ESCUCHADORES DE FIRESTORE ---
         const setupListeners = () => {
             if (!user) return;
             if (unsubscribeVisits) unsubscribeVisits();
-            
-            // Ruta obligatoria para permisos: /artifacts/{appId}/public/data/visits
             const visitsCollection = collection(db, 'artifacts', internalAppId, 'public', 'data', 'visits');
-            
             unsubscribeVisits = onSnapshot(visitsCollection, (snapshot) => {
                 visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 visits.sort((a, b) => new Date(b.entryTime) - new Date(a.entryTime));
                 renderAll();
-            }, (err) => {
-                console.error("Snapshot error:", err);
-                const statusEl = document.getElementById('db-status');
-                if (statusEl) statusEl.innerHTML = `<span class="text-red-400 text-[10px]">Error de Permisos</span>`;
             });
         };
 
-        // --- OPERACIONES ---
         const saveVisit = async (e) => {
             e.preventDefault();
             if (!user) return;
@@ -154,7 +143,7 @@
         };
 
         window.deleteVisit = async (id) => {
-            if (!confirm("¿Eliminar registro?")) return;
+            if (!confirm("¿Eliminar registro permanentemente?")) return;
             try {
                 const docRef = doc(db, 'artifacts', internalAppId, 'public', 'data', 'visits', id);
                 await deleteDoc(docRef);
@@ -178,6 +167,7 @@
         const renderAll = () => {
             updateStats();
             renderActiveList();
+            renderTodayLogs();
             renderReportTable();
             lucide.createIcons();
         };
@@ -188,40 +178,33 @@
             const today = visits.filter(v => new Date(v.entryTime).toDateString() === todayStr).length;
             const vehicles = visits.filter(v => v.status === 'active' && v.vehicle).length;
 
-            const elActive = document.getElementById('stat-active');
-            const elToday = document.getElementById('stat-today');
-            const elVehicles = document.getElementById('stat-vehicles');
-
-            if (elActive) elActive.innerText = active;
-            if (elToday) elToday.innerText = today;
-            if (elVehicles) elVehicles.innerText = vehicles;
+            document.getElementById('stat-active').innerText = active;
+            document.getElementById('stat-today').innerText = today;
+            document.getElementById('stat-vehicles').innerText = vehicles;
         };
 
         const renderActiveList = () => {
             const container = document.getElementById('active-list-container');
-            if (!container) return;
             const activeOnes = visits.filter(v => v.status === 'active');
-
             if (activeOnes.length === 0) {
-                container.innerHTML = `<div class="p-8 text-center text-gray-400">No hay personal activo.</div>`;
+                container.innerHTML = `<div class="p-4 text-center text-gray-400 text-sm">Sin personal activo.</div>`;
                 return;
             }
-
             container.innerHTML = activeOnes.map(v => `
-                <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-blue-200 transition">
-                    <div class="flex-1">
-                        <div class="flex items-center space-x-2">
-                            <h4 class="font-bold text-gray-800">${v.name}</h4>
-                            <span class="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold uppercase">Activo</span>
+                <div class="flex items-center justify-between p-3 bg-white border border-gray-200 hover:bg-blue-50 transition-colors">
+                    <div class="flex-1 min-w-0 mr-4">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-gray-800 truncate text-sm">${v.name}</span>
+                            <span class="text-[9px] border border-blue-200 text-blue-600 px-1.5 rounded font-bold uppercase">Activo</span>
                         </div>
-                        <p class="text-xs text-gray-500">${v.document} • <span class="text-blue-600 font-medium">${v.host}</span></p>
+                        <p class="text-[11px] text-gray-500 truncate">${v.document} | ${v.company || 'Particular'} ➔ <span class="text-blue-700">${v.host}</span></p>
                     </div>
-                    <div class="flex items-center space-x-2">
-                        <button onclick="markExit('${v.id}')" class="p-2 text-red-500 hover:bg-red-50 rounded-lg transition">
-                            <i data-lucide="log-out" class="w-5 h-5"></i>
+                    <div class="flex items-center gap-1">
+                        <button onclick="markExit('${v.id}')" class="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Salida">
+                            <i data-lucide="log-out" class="w-4 h-4"></i>
                         </button>
-                        <button onclick="editVisit('${v.id}')" class="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition">
-                            <i data-lucide="edit-3" class="w-5 h-5"></i>
+                        <button onclick="editVisit('${v.id}')" class="p-1.5 text-gray-400 hover:bg-gray-100 rounded">
+                            <i data-lucide="edit-2" class="w-4 h-4"></i>
                         </button>
                     </div>
                 </div>
@@ -229,28 +212,64 @@
             lucide.createIcons();
         };
 
+        const renderTodayLogs = () => {
+            const container = document.getElementById('today-logs-table');
+            const todayStr = new Date().toDateString();
+            const todayVisits = visits.filter(v => new Date(v.entryTime).toDateString() === todayStr);
+            
+            if (todayVisits.length === 0) {
+                container.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-gray-400 italic">No hay registros hoy.</td></tr>`;
+                return;
+            }
+
+            container.innerHTML = todayVisits.map(v => `
+                <tr class="border-b border-gray-100 text-sm hover:bg-gray-50">
+                    <td class="px-4 py-2 font-medium">${v.name}</td>
+                    <td class="px-4 py-2 text-gray-500">${v.document}</td>
+                    <td class="px-4 py-2">${v.host}</td>
+                    <td class="px-4 py-2 font-mono text-xs">
+                        <span class="text-green-600">${new Date(v.entryTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                        ${v.exitTime ? `<span class="text-gray-400"> / </span><span class="text-red-500">${new Date(v.exitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>` : ''}
+                    </td>
+                    <td class="px-4 py-2 text-center">
+                        <span class="inline-block w-2 h-2 rounded-full ${v.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}"></span>
+                    </td>
+                </tr>
+            `).join('');
+        };
+
         const renderReportTable = () => {
             const tbody = document.getElementById('report-table-body');
-            if (!tbody) return;
-            const searchTerm = document.getElementById('search-filter')?.value.toLowerCase() || "";
+            const searchName = document.getElementById('search-filter')?.value.toLowerCase() || "";
+            const searchHost = document.getElementById('search-host')?.value.toLowerCase() || "";
+            const filterDateStart = document.getElementById('filter-date-start')?.value || "";
+            const filterDateEnd = document.getElementById('filter-date-end')?.value || "";
             
             const filtered = visits.filter(v => {
-                return (v.name || "").toLowerCase().includes(searchTerm) || 
-                       (v.document || "").includes(searchTerm);
+                const matchesName = (v.name || "").toLowerCase().includes(searchName) || (v.document || "").includes(searchName);
+                const matchesHost = (v.host || "").toLowerCase().includes(searchHost);
+                let matchesDate = true;
+                if (filterDateStart || filterDateEnd) {
+                    const entryDate = v.entryTime.split('T')[0];
+                    if (filterDateStart && entryDate < filterDateStart) matchesDate = false;
+                    if (filterDateEnd && entryDate > filterDateEnd) matchesDate = false;
+                }
+                return matchesName && matchesHost && matchesDate;
             });
 
             tbody.innerHTML = filtered.map(v => `
-                <tr class="hover:bg-gray-50 transition border-b border-gray-100">
-                    <td class="px-4 py-3 font-medium">${v.name}</td>
-                    <td class="px-4 py-3 text-gray-500">${v.document}</td>
-                    <td class="px-4 py-3 text-gray-500">${new Date(v.entryTime).toLocaleDateString()}</td>
-                    <td class="px-4 py-3 font-mono text-xs">
-                        ${new Date(v.entryTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} / 
-                        ${v.exitTime ? new Date(v.exitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '--'}
+                <tr class="hover:bg-gray-50 transition border-b border-gray-100 text-xs">
+                    <td class="px-3 py-2 font-bold text-gray-700">${v.name}</td>
+                    <td class="px-3 py-2 text-gray-500">${v.document}</td>
+                    <td class="px-3 py-2 text-blue-600 font-semibold">${v.host}</td>
+                    <td class="px-3 py-2 text-gray-400">${new Date(v.entryTime).toLocaleDateString()}</td>
+                    <td class="px-3 py-2 font-mono">
+                        <span class="text-green-600">${new Date(v.entryTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span> - 
+                        <span class="${v.exitTime ? 'text-red-600' : 'text-gray-300'}">${v.exitTime ? new Date(v.exitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...'}</span>
                     </td>
-                    <td class="px-4 py-3">
+                    <td class="px-3 py-2 text-right">
                         <button onclick="deleteVisit('${v.id}')" class="text-gray-300 hover:text-red-500 transition">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </td>
                 </tr>
@@ -259,146 +278,194 @@
         };
 
         window.exportToCSV = () => {
-            const rows = [["Nombre", "Documento", "Entrada", "Salida", "Estado"]];
-            visits.forEach(v => rows.push([v.name, v.document, v.entryTime, v.exitTime || "", v.status]));
+            const rows = [["Nombre", "Documento", "Anfitrión", "Fecha", "Entrada", "Salida", "Estado"]];
+            visits.forEach(v => {
+                rows.push([v.name, v.document, v.host, v.entryTime.split('T')[0], new Date(v.entryTime).toLocaleTimeString(), v.exitTime ? new Date(v.exitTime).toLocaleTimeString() : "", v.status]);
+            });
             const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
             const link = document.createElement("a");
             link.setAttribute("href", encodeURI(csvContent));
-            link.setAttribute("download", "reporte.csv");
+            link.setAttribute("download", `reporte_seguridad.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         };
 
-        // --- INICIALIZACIÓN ---
         window.addEventListener('DOMContentLoaded', async () => {
             await initAuth();
             showTab('dashboard');
-            
-            const dateEl = document.getElementById('current-date');
-            if (dateEl) dateEl.innerText = new Date().toLocaleDateString();
-            
+            document.getElementById('current-date').innerText = new Date().toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
             document.getElementById('entry-form')?.addEventListener('submit', saveVisit);
-            document.getElementById('search-filter')?.addEventListener('input', renderReportTable);
-            
+            ['search-filter', 'search-host', 'filter-date-start', 'filter-date-end'].forEach(id => {
+                document.getElementById(id)?.addEventListener('input', renderReportTable);
+            });
             window.showTab = showTab;
             window.markExit = markExit;
             window.editVisit = editVisit;
             window.cancelEdit = cancelEdit;
             window.deleteVisit = deleteVisit;
             window.exportToCSV = exportToCSV;
-            
             lucide.createIcons();
         });
     </script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; letter-spacing: -0.01em; }
+        .tab-content { animation: fadeIn 0.15s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        /* Scrollbar delgada */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-900">
+<body class="bg-gray-100 text-slate-900">
     <div class="flex h-screen overflow-hidden">
-        <!-- Sidebar -->
-        <aside class="w-64 bg-slate-900 text-white flex flex-col hidden md:flex">
-            <div class="p-6 flex items-center space-x-3">
-                <div class="p-2 bg-blue-600 rounded-lg">
-                    <i data-lucide="shield-check" class="w-6 h-6"></i>
+        <!-- Sidebar Compacto -->
+        <aside class="w-56 bg-slate-800 text-slate-300 flex flex-col hidden md:flex border-r border-slate-700">
+            <div class="p-4 flex items-center gap-2 border-b border-slate-700/50">
+                <div class="p-1.5 bg-blue-600 rounded">
+                    <i data-lucide="shield" class="w-4 h-4 text-white"></i>
                 </div>
-                <span class="text-xl font-bold">SecureAccess</span>
+                <span class="text-sm font-bold text-white">SecureAccess</span>
             </div>
-            <nav class="flex-1 px-4 space-y-2 mt-4">
-                <button onclick="showTab('dashboard')" id="btn-dashboard" class="sidebar-item w-full flex items-center space-x-3 p-3 rounded-xl transition">
-                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+            <nav class="flex-1 p-2 space-y-0.5 mt-2">
+                <button onclick="showTab('dashboard')" id="btn-dashboard" class="sidebar-item w-full flex items-center gap-3 px-3 py-2 rounded text-sm hover:bg-slate-700 hover:text-white transition-all">
+                    <i data-lucide="grid" class="w-4 h-4"></i>
                     <span>Panel</span>
                 </button>
-                <button onclick="showTab('entry-management')" id="btn-entry-management" class="sidebar-item w-full flex items-center space-x-3 p-3 rounded-xl transition">
-                    <i data-lucide="user-plus" class="w-5 h-5"></i>
-                    <span>Accesos</span>
+                <button onclick="showTab('today-logs')" id="btn-today-logs" class="sidebar-item w-full flex items-center gap-3 px-3 py-2 rounded text-sm hover:bg-slate-700 hover:text-white transition-all">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    <span>Registros de Hoy</span>
                 </button>
-                <button onclick="showTab('reports')" id="btn-reports" class="sidebar-item w-full flex items-center space-x-3 p-3 rounded-xl transition">
-                    <i data-lucide="file-text" class="w-5 h-5"></i>
-                    <span>Reportes</span>
+                <button onclick="showTab('entry-management')" id="btn-entry-management" class="sidebar-item w-full flex items-center gap-3 px-3 py-2 rounded text-sm hover:bg-slate-700 hover:text-white transition-all">
+                    <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                    <span>Registrar Visitantes</span>
+                </button>
+                <button onclick="showTab('reports')" id="btn-reports" class="sidebar-item w-full flex items-center gap-3 px-3 py-2 rounded text-sm hover:bg-slate-700 hover:text-white transition-all">
+                    <i data-lucide="archive" class="w-4 h-4"></i>
+                    <span>Historial de Visitas</span>
                 </button>
             </nav>
-            <div class="p-4 border-t border-slate-800" id="db-status">
-                <div class="flex items-center space-x-2 text-[10px] text-amber-400">
-                    <div class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></div>
-                    <span>CONECTANDO...</span>
+            <div class="p-3 border-t border-slate-700/50" id="db-status">
+                <div class="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-bold">
+                    <div class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>
+                    <span>Cargando...</span>
                 </div>
             </div>
         </aside>
 
-        <main class="flex-1 flex flex-col bg-gray-50 overflow-hidden">
-            <header class="bg-white border-b p-4 flex justify-between items-center px-8">
-                <h2 id="current-tab-title" class="text-lg font-bold">Panel Principal</h2>
-                <span id="current-date" class="text-xs text-gray-400"></span>
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <header class="bg-white border-b h-12 flex justify-between items-center px-6 shrink-0">
+                <h2 id="current-tab-title" class="text-sm font-bold text-slate-700">Panel Principal</h2>
+                <span id="current-date" class="text-[11px] font-bold text-slate-400 uppercase tracking-wider"></span>
             </header>
 
-            <div class="flex-1 overflow-y-auto p-6">
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
                 <!-- DASHBOARD -->
-                <div id="dashboard" class="tab-content space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="bg-white p-6 rounded-2xl border shadow-sm">
-                            <p class="text-gray-400 text-[10px] font-bold uppercase">En Planta</p>
-                            <h3 id="stat-active" class="text-4xl font-black text-blue-600">0</h3>
+                <div id="dashboard" class="tab-content space-y-4">
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="bg-white p-4 border border-gray-200">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">Activos Ahora</p>
+                            <h3 id="stat-active" class="text-2xl font-black text-blue-600 leading-none mt-1">0</h3>
                         </div>
-                        <div class="bg-white p-6 rounded-2xl border shadow-sm">
-                            <p class="text-gray-400 text-[10px] font-bold uppercase">Registros Hoy</p>
-                            <h3 id="stat-today" class="text-4xl font-black text-slate-800">0</h3>
+                        <div class="bg-white p-4 border border-gray-200">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">Total Hoy</p>
+                            <h3 id="stat-today" class="text-2xl font-black text-slate-800 leading-none mt-1">0</h3>
                         </div>
-                        <div class="bg-white p-6 rounded-2xl border shadow-sm">
-                            <p class="text-gray-400 text-[10px] font-bold uppercase">Vehículos</p>
-                            <h3 id="stat-vehicles" class="text-4xl font-black text-amber-500">0</h3>
+                        <div class="bg-white p-4 border border-gray-200">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">Con Vehículo</p>
+                            <h3 id="stat-vehicles" class="text-2xl font-black text-amber-500 leading-none mt-1">0</h3>
                         </div>
+                    </div>
+                </div>
+
+                <!-- TODAY LOGS -->
+                <div id="today-logs" class="tab-content hidden bg-white border border-gray-200">
+                    <div class="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                        <h4 class="text-xs font-bold uppercase text-slate-500">Movimientos del día</h4>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 text-[10px] uppercase text-slate-400 border-b">
+                                <tr>
+                                    <th class="px-4 py-2 font-bold">Nombre</th>
+                                    <th class="px-4 py-2 font-bold">Documento</th>
+                                    <th class="px-4 py-2 font-bold">Anfitrión</th>
+                                    <th class="px-4 py-2 font-bold">Horas</th>
+                                    <th class="px-4 py-2 font-bold text-center">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="today-logs-table" class="divide-y divide-gray-100">
+                                <!-- Datos dinámicos -->
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
                 <!-- ENTRY MANAGEMENT -->
-                <div id="entry-management" class="tab-content hidden h-full">
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        <div class="lg:col-span-5 bg-white p-6 rounded-2xl border shadow-xl">
-                            <h3 id="form-title" class="text-base font-black mb-6">Nuevo Registro</h3>
-                            <form id="entry-form" class="space-y-4">
-                                <input type="text" id="v-name" required class="w-full p-3 bg-gray-50 border rounded-xl text-sm" placeholder="Nombre Completo">
-                                <input type="text" id="v-doc" required class="w-full p-3 bg-gray-50 border rounded-xl text-sm" placeholder="CI / DNI">
-                                <input type="text" id="v-company" class="w-full p-3 bg-gray-50 border rounded-xl text-sm" placeholder="Empresa">
-                                <input type="text" id="v-vehicle" class="w-full p-3 bg-gray-50 border rounded-xl text-sm" placeholder="Vehículo (Placa)">
-                                <input type="text" id="v-host" required class="w-full p-3 bg-gray-50 border rounded-xl text-sm" placeholder="¿A quién visita?">
-                                <textarea id="v-reason" class="w-full p-3 bg-gray-50 border rounded-xl text-sm" placeholder="Motivo"></textarea>
-                                <div class="flex space-x-2">
-                                    <button type="submit" id="btn-submit" class="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">Confirmar</button>
-                                    <button type="button" id="btn-cancel" onclick="cancelEdit()" class="hidden bg-gray-200 px-4 rounded-xl text-sm font-bold">X</button>
+                <div id="entry-management" class="tab-content hidden">
+                    <div class="grid grid-cols-12 gap-4">
+                        <div class="col-span-12 lg:col-span-4 bg-white p-5 border border-gray-200">
+                            <h3 id="form-title" class="text-sm font-bold mb-4 text-slate-700">Nuevo Registro</h3>
+                            <form id="entry-form" class="space-y-3">
+                                <input type="text" id="v-name" required class="w-full px-3 py-2 bg-gray-50 border border-gray-200 text-sm focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Nombre completo">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <input type="text" id="v-doc" required class="px-3 py-2 bg-gray-50 border border-gray-200 text-sm outline-none" placeholder="CI / DNI">
+                                    <input type="text" id="v-company" class="px-3 py-2 bg-gray-50 border border-gray-200 text-sm outline-none" placeholder="Empresa">
+                                </div>
+                                <input type="text" id="v-vehicle" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 text-sm outline-none" placeholder="Vehículo (Placa)">
+                                <input type="text" id="v-host" required class="w-full px-3 py-2 bg-gray-50 border border-gray-200 text-sm outline-none" placeholder="¿A quién busca?">
+                                <textarea id="v-reason" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 text-sm outline-none h-16" placeholder="Observaciones..."></textarea>
+                                <div class="flex gap-2">
+                                    <button type="submit" id="btn-submit" class="flex-1 bg-blue-600 text-white font-bold py-2 text-sm hover:bg-blue-700">Confirmar</button>
+                                    <button type="button" id="btn-cancel" onclick="cancelEdit()" class="hidden bg-gray-100 text-slate-500 px-4 text-sm font-bold">X</button>
                                 </div>
                             </form>
                         </div>
-                        <div class="lg:col-span-7 space-y-4">
-                            <h3 class="font-black text-base">Personal en Planta</h3>
-                            <div id="active-list-container" class="space-y-3"></div>
+                        <div class="col-span-12 lg:col-span-8 bg-white border border-gray-200 overflow-hidden">
+                            <div class="p-3 bg-gray-50 border-b border-gray-100 text-xs font-bold uppercase text-slate-500">Personal en Planta</div>
+                            <div id="active-list-container" class="divide-y divide-gray-100"></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- REPORTS -->
-                <div id="reports" class="tab-content hidden space-y-6">
-                    <div class="bg-white p-4 rounded-2xl border flex items-center space-x-4">
-                        <input type="text" id="search-filter" class="flex-1 p-2 bg-gray-50 border rounded-lg text-sm" placeholder="Buscar por nombre o CI...">
-                        <button onclick="exportToCSV()" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center">
-                            <i data-lucide="download" class="w-4 h-4 mr-2"></i> CSV
-                        </button>
+                <!-- REPORTS COMPLETO -->
+                <div id="reports" class="tab-content hidden space-y-4">
+                    <div class="bg-white p-3 border border-gray-200 grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+                        <div class="col-span-2 md:col-span-1">
+                            <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Nombre / CI</label>
+                            <input type="text" id="search-filter" class="w-full p-2 bg-gray-50 border border-gray-200 text-xs outline-none" placeholder="Nombre / CI">
+                        </div>
+                        <div class="col-span-2 md:col-span-1">
+                            <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Area Visitada</label>
+                            <input type="text" id="search-host" class="w-full p-2 bg-gray-50 border border-gray-200 text-xs outline-none" placeholder="Area">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Desde</label>
+                            <input type="date" id="filter-date-start" class="w-full p-2 bg-gray-50 border border-gray-200 text-xs outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Hasta</label>
+                            <input type="date" id="filter-date-end" class="w-full p-2 bg-gray-50 border border-gray-200 text-xs outline-none">
+                        </div>
+                        <button onclick="exportToCSV()" class="bg-emerald-600 text-white py-2 px-4 font-bold text-xs uppercase hover:bg-emerald-700 transition">Exportar</button>
                     </div>
-                    <div class="bg-white rounded-2xl border overflow-hidden">
-                        <table class="w-full text-left text-sm">
-                            <thead class="bg-slate-50 border-b">
+
+                    <div class="bg-white border border-gray-200 overflow-hidden">
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-50 text-[10px] uppercase text-slate-500 border-b">
                                 <tr>
-                                    <th class="px-4 py-3">Nombre</th>
-                                    <th class="px-4 py-3">Documento</th>
-                                    <th class="px-4 py-3">Fecha</th>
-                                    <th class="px-4 py-3">Horario (E/S)</th>
-                                    <th class="px-4 py-3"></th>
+                                    <th class="px-3 py-2">Nombre</th>
+                                    <th class="px-3 py-2">Documento</th>
+                                    <th class="px-3 py-2">Destino</th>
+                                    <th class="px-3 py-2">Fecha</th>
+                                    <th class="px-3 py-2">E / S</th>
+                                    <th class="px-3 py-2"></th>
                                 </tr>
                             </thead>
-                            <tbody id="report-table-body"></tbody>
+                            <tbody id="report-table-body" class="divide-y divide-gray-100"></tbody>
                         </table>
                     </div>
                 </div>
