@@ -13,14 +13,14 @@
         import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCojva8vXR0-aREvi-chXRp_nVoHsI57pE",
-            authDomain: "aevsegu.firebaseapp.com",
-            projectId: "aevsegu",
-            storageBucket: "aevsegu.firebasestorage.app",
-            messagingSenderId: "34531792748",
-            appId: "1:34531792748:web:e814648c3df8c5215f0549"
-        };
+            const firebaseConfig = {
+            apiKey: "AIzaSyCaIy8_L-bbwtm9UI3FOk4QpCH0EN0ibjU",
+            authDomain: "aevseguridad.firebaseapp.com",
+            projectId: "aevseguridad",
+            storageBucket: "aevseguridad.firebasestorage.app",
+            messagingSenderId: "47243945204",
+            appId: "1:47243945204:web:f89e0f9998c87b43902aa1"
+            };
 
         const internalAppId = 'security-system-v1';
         const app = initializeApp(firebaseConfig);
@@ -115,6 +115,17 @@
 
         const saveVisit = async (e) => {
             e.preventDefault();
+            const docInput = document.getElementById('v-doc').value;
+            
+            // Solo verificamos si es un registro nuevo (no una edición)
+            if (!editingId) {
+                const isAlreadyInside = visits.find(v => v.document === docInput && v.status === 'active');
+                if (isAlreadyInside) {
+                    showCustomAlert("ACCESO DENEGADO", "Esta persona ya se encuentra actualmente en oficinas y no puede registrarse nuevamente hasta marcar su salida.");
+                    return;
+                }
+            }
+
             const currentVisit = editingId ? visits.find(v => v.id === editingId) : null;
             
             const visitData = {
@@ -246,10 +257,6 @@
                         <span class="text-green-600">${new Date(v.entryTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                         ${v.exitTime ? `<span class="text-gray-300"> - </span><span class="text-red-500">${new Date(v.exitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>` : ''}
                     </td>
-                    <td class="px-3 py-1 text-right flex gap-1 justify-end">
-                        <button onclick="editVisit('${v.id}')" class="text-blue-400 hover:text-blue-600 p-1"><i data-lucide="edit-3" class="w-3 h-3"></i></button>
-                        <button onclick="deleteVisit('${v.id}')" class="text-gray-300 hover:text-red-500 p-1"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
-                    </td>
                 </tr>
             `).join('');
             lucide.createIcons();
@@ -275,11 +282,17 @@
             
             Object.assign(window, { 
                 showTab: (tabId) => {
+                    const titles = {
+                        'dashboard': 'PANEL CENTRAL',
+                        'entry-management': 'NUEVO ACCESO',
+                        'today-logs': 'BITÁCORA HOY',
+                        'reports': 'HISTORIAL COMPLETO'
+                    };
                     document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
                     document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('bg-blue-700', 'text-white'));
                     document.getElementById(tabId).classList.remove('hidden');
                     document.getElementById('btn-' + tabId).classList.add('bg-blue-700', 'text-white');
-                    document.getElementById('current-tab-title').innerText = tabId.toUpperCase().replace('-', ' ');
+                    document.getElementById('current-tab-title').innerText = titles[tabId] || tabId.toUpperCase();
                 },
                 editVisit: (id) => {
                     const v = visits.find(v => v.id === id);
@@ -358,6 +371,15 @@
                     const wb = XLSX.utils.book_new();
                     XLSX.utils.book_append_sheet(wb, ws, "Visitas");
                     XLSX.writeFile(wb, `Reporte_Accesos_${new Date().toISOString().split('T')[0]}.xlsx`);
+                },
+                showCustomAlert: (title, msg) => {
+                    document.getElementById('alert-title').innerText = title;
+                    document.getElementById('alert-message').innerText = msg;
+                    document.getElementById('custom-alert-modal').classList.remove('hidden');
+                    lucide.createIcons();
+                },
+                closeCustomAlert: () => {
+                    document.getElementById('custom-alert-modal').classList.add('hidden');
                 }
             });
             
@@ -390,7 +412,7 @@
                     <i data-lucide="shield-check" class="text-white w-7 h-7"></i>
                 </div>
                 <h1 class="text-xl font-black text-slate-800 tracking-tight">AEV SEGURIDAD</h1>
-                <p class="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">SISTEMA DE CONTROL CRÍTICO</p>
+                <p class="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">SISTEMA DE CONTROL DE INGRESO</p>
             </div>
             <form id="login-form" class="space-y-4">
                 <div>
@@ -413,20 +435,20 @@
         <aside class="w-44 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-700 shrink-0">
             <div class="p-4 border-b border-slate-800 bg-slate-950 flex flex-col items-center">
                 <i data-lucide="shield-half" class="w-6 h-6 text-blue-500 mb-2"></i>
-                <span class="text-[11px] font-black text-white tracking-widest uppercase italic">AEVSEGURIDAD</span>
+                <span class="text-[11px] font-black text-white tracking-widest uppercase italic">AEV SEGURIDAD</span>
             </div>
             <nav class="flex-1 p-2 space-y-1">
                 <button onclick="showTab('dashboard')" id="btn-dashboard" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
-                    <i data-lucide="layout-grid" class="w-4 h-4"></i> Inicio
+                    <i data-lucide="layout-grid" class="w-4 h-4"></i> INICIO
                 </button>
                 <button onclick="showTab('entry-management')" id="btn-entry-management" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
-                    <i data-lucide="user-plus" class="w-4 h-4"></i> Nuevo Registgro
+                    <i data-lucide="user-plus" class="w-4 h-4"></i> NUEVO REGISTRO
                 </button>
                 <button onclick="showTab('today-logs')" id="btn-today-logs" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
-                    <i data-lucide="clock" class="w-4 h-4"></i> Bitácora Hoy
+                    <i data-lucide="clock" class="w-4 h-4"></i> BITACORA HOY
                 </button>
                 <button onclick="showTab('reports')" id="btn-reports" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
-                    <i data-lucide="database" class="w-4 h-4"></i> Historial
+                    <i data-lucide="database" class="w-4 h-4"></i> HISTORIAL
                 </button>
             </nav>
             <div class="p-3 bg-slate-950/50 border-t border-slate-800">
@@ -439,8 +461,8 @@
         <main class="flex-1 flex flex-col overflow-hidden bg-white">
             <header class="bg-white border-b h-10 flex justify-between items-center px-4 shrink-0">
                 <div class="flex items-center gap-2">
-                <!--    <div class="w-2 h-2 bg-blue-600"></div>
-                    <h2 id="current-tab-title" class="text-[11px] font-black uppercase text-slate-600 tracking-tighter">CARGANDO...</h2>-->
+                    <div class="w-2 h-2 bg-blue-600"></div>
+                    <h2 id="current-tab-title" class="text-[11px] font-black uppercase text-slate-600 tracking-tighter">CARGANDO...</h2>
                 </div>
                 <div class="flex items-center gap-6">
                     <div class="flex flex-col items-end leading-tight">
@@ -503,7 +525,7 @@
                                     <input type="text" id="v-vehicle" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 text-xs outline-none focus:border-blue-500 uppercase font-mono" placeholder="Opcional">
                                 </div>
                                 <div>
-                                    <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Oficinas / Destino</label>
+                                    <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Oficina / Destino</label>
                                     <input type="text" id="v-host" required class="w-full px-3 py-2 bg-blue-50 border border-blue-200 text-xs font-bold text-blue-900 outline-none focus:border-blue-500 uppercase" placeholder="¿A quién visita?">
                                 </div>
                             </div>
@@ -518,7 +540,7 @@
                     <!-- Lista Activos -->
                     <div class="col-span-12 lg:col-span-7 border border-gray-300 bg-white shadow-sm flex flex-col">
                         <div class="bg-slate-800 p-2 text-[10px] font-black uppercase text-white tracking-widest flex items-center gap-2">
-                            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-blue-400"></i> VIsitantes Actualmente en Oficinas
+                            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-blue-400"></i> Personal Actualmente en Planta
                         </div>
                         <div id="active-list-container" class="flex-1 overflow-y-auto max-h-[420px]">
                             <!-- Se llena por JS -->
@@ -578,7 +600,6 @@
                                     <th class="px-4 py-2">Oficina</th>
                                     <th class="px-4 py-2">Fecha</th>
                                     <th class="px-4 py-2">Ingreso/Salida</th>
-                                    <th class="px-4 py-2 w-16 text-right">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="report-table-body" class="divide-y divide-gray-100 bg-white">
@@ -590,6 +611,17 @@
 
             </div>
         </main>
+    </div>
+
+    <div id="custom-alert-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+        <div class="bg-white max-w-xs w-full border-t-4 border-red-600 shadow-2xl p-6 text-center">
+            <div class="w-12 h-12 bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4 border border-red-100">
+                <i data-lucide="shield-alert" class="w-6 h-6"></i>
+            </div>
+            <h3 id="alert-title" class="text-[11px] font-black text-slate-800 uppercase mb-2 tracking-tight"></h3>
+            <p id="alert-message" class="text-[10px] text-gray-500 leading-relaxed mb-6 font-medium"></p>
+            <button onclick="closeCustomAlert()" class="w-full bg-slate-800 text-white text-[10px] font-bold uppercase py-3 hover:bg-slate-900 transition-all active:scale-95 shadow-lg">Entendido</button>
+        </div>
     </div>
 
 </body>
