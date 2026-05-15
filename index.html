@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureAccess Pro - Gestión de Control</title>
+    <title>SecureAccess Pro - Punto de Restauración</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
@@ -68,11 +69,13 @@
 
         const handleDocLookup = (e) => {
             const rawInput = e.target.value.trim();
-            // No autocompletar si estamos en modo edición o si el input es corto
+            // Desactivar si el input es corto o estamos editando un registro existente
             if (rawInput.length < 3 || editingId) return; 
 
+            // Limpieza agresiva de caracteres para comparación (solo letras y números)
             const cleanInput = rawInput.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
+            // Buscar en el historial local (visitas ya cargadas)
             const match = visits.find(v => {
                 const cleanStoredDoc = String(v.document || "").replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
                 return cleanStoredDoc === cleanInput;
@@ -87,6 +90,7 @@
                 if (compEl) compEl.value = match.company || '';
                 if (vehEl) vehEl.value = match.vehicle || '';
                 
+                // Efecto visual de "campos encontrados"
                 [nameEl, compEl, vehEl].forEach(el => {
                     if (el) {
                         el.classList.add('ring-2', 'ring-blue-400', 'bg-blue-50');
@@ -103,6 +107,7 @@
             const visitsCollection = collection(db, 'artifacts', internalAppId, 'public', 'data', 'visits');
             unsubscribeVisits = onSnapshot(visitsCollection, (snapshot) => {
                 visits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Ordenar por tiempo de entrada (más recientes primero)
                 visits.sort((a, b) => new Date(b.entryTime) - new Date(a.entryTime));
                 renderAll();
             });
@@ -113,11 +118,11 @@
             const currentVisit = editingId ? visits.find(v => v.id === editingId) : null;
             
             const visitData = {
-                name: document.getElementById('v-name').value,
+                name: document.getElementById('v-name').value.toUpperCase(),
                 document: document.getElementById('v-doc').value,
-                company: document.getElementById('v-company').value,
-                vehicle: document.getElementById('v-vehicle').value,
-                host: document.getElementById('v-host').value,
+                company: document.getElementById('v-company').value.toUpperCase(),
+                vehicle: document.getElementById('v-vehicle').value.toUpperCase(),
+                host: document.getElementById('v-host').value.toUpperCase(),
                 reason: document.getElementById('v-reason').value,
                 entryTime: editingId ? currentVisit.entryTime : new Date().toISOString(),
                 exitTime: editingId ? currentVisit.exitTime : null,
@@ -131,7 +136,10 @@
                 await setDoc(docRef, visitData, { merge: true });
                 cancelEdit();
                 e.target.reset();
-            } catch (err) { console.error(err); }
+            } catch (err) { 
+                console.error("Error al guardar:", err);
+                alert("Error al guardar en la base de datos.");
+            }
         };
 
         const renderAll = () => {
@@ -145,30 +153,40 @@
         const updateStats = () => {
             const active = visits.filter(v => v.status === 'active').length;
             const todayStr = new Date().toDateString();
-            const today = visits.filter(v => new Date(v.entryTime).toDateString() === todayStr).length;
-            const vehicles = visits.filter(v => v.status === 'active' && v.vehicle).length;
+            const todayCount = visits.filter(v => new Date(v.entryTime).toDateString() === todayStr).length;
+            const vehiclesCount = visits.filter(v => v.status === 'active' && v.vehicle).length;
 
             document.getElementById('stat-active').innerText = active;
-            document.getElementById('stat-today').innerText = today;
-            document.getElementById('stat-vehicles').innerText = vehicles;
+            document.getElementById('stat-today').innerText = todayCount;
+            document.getElementById('stat-vehicles').innerText = vehiclesCount;
         };
 
         const renderActiveList = () => {
             const container = document.getElementById('active-list-container');
             const activeOnes = visits.filter(v => v.status === 'active');
-            container.innerHTML = activeOnes.length === 0 ? 
-                `<div class="p-4 text-center text-gray-400 text-[10px] italic">No hay personal activo.</div>` :
-                activeOnes.map(v => `
-                <div class="flex items-center justify-between p-2 bg-white border-b border-gray-100 hover:bg-blue-50">
+            
+            if (activeOnes.length === 0) {
+                container.innerHTML = `<div class="p-4 text-center text-gray-400 text-[10px] italic">No hay personal activo en planta.</div>`;
+                return;
+            }
+
+            container.innerHTML = activeOnes.map(v => `
+                <div class="flex items-center justify-between p-2 bg-white border-b border-gray-100 hover:bg-blue-50 transition-colors">
                     <div class="flex-1 min-w-0 mr-4">
                         <div class="flex items-center gap-2">
                             <span class="font-bold text-gray-800 truncate text-[11px] uppercase">${v.name}</span>
                         </div>
-                        <p class="text-[9px] text-gray-500 truncate">${v.document} • ${v.company || 'PARTICULAR'} ➔ <span class="text-blue-700 font-bold">${v.host}</span></p>
+                        <p class="text-[9px] text-gray-500 truncate">
+                            ${v.document} • ${v.company || 'PARTICULAR'} ➔ <span class="text-blue-700 font-bold">${v.host}</span>
+                        </p>
                     </div>
-                    <div class="flex items-center gap-1">
-                        <button onclick="editVisit('${v.id}')" class="p-1.5 text-blue-500 hover:bg-blue-50 border border-transparent rounded"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
-                        <button onclick="markExit('${v.id}')" class="p-1.5 text-red-500 hover:bg-red-50 border border-transparent rounded"><i data-lucide="log-out" class="w-3.5 h-3.5"></i></button>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="editVisit('${v.id}')" title="Editar" class="p-1.5 text-blue-500 hover:bg-blue-100 border border-transparent rounded transition-colors">
+                            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="markExit('${v.id}')" title="Marcar Salida" class="p-1.5 text-red-500 hover:bg-red-100 border border-transparent rounded transition-colors">
+                            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                        </button>
                     </div>
                 </div>
             `).join('');
@@ -200,16 +218,27 @@
             const tbody = document.getElementById('report-table-body');
             const search = (document.getElementById('search-filter')?.value || "").toLowerCase();
             const host = (document.getElementById('search-host')?.value || "").toLowerCase();
+            const dateStart = document.getElementById('search-date-start')?.value;
+            const dateEnd = document.getElementById('search-date-end')?.value;
             
             const filtered = visits.filter(v => {
                 const mName = (v.name || "").toLowerCase().includes(search) || (v.document || "").includes(search);
                 const mHost = (v.host || "").toLowerCase().includes(host);
-                return mName && mHost;
+                
+                // Lógica de fecha
+                let mDate = true;
+                if (dateStart || dateEnd) {
+                    const vDate = v.entryTime.split('T')[0]; // YYYY-MM-DD
+                    if (dateStart && vDate < dateStart) mDate = false;
+                    if (dateEnd && vDate > dateEnd) mDate = false;
+                }
+
+                return mName && mHost && mDate;
             });
 
             tbody.innerHTML = filtered.map(v => `
                 <tr class="hover:bg-gray-50 border-b border-gray-100 text-[10px]">
-                    <td class="px-3 py-1 font-bold">${v.name}</td>
+                    <td class="px-3 py-1 font-bold uppercase">${v.name}</td>
                     <td class="px-3 py-1 text-gray-500">${v.document}</td>
                     <td class="px-3 py-1 text-blue-600 font-bold uppercase">${v.host}</td>
                     <td class="px-3 py-1 text-gray-400">${new Date(v.entryTime).toLocaleDateString()}</td>
@@ -218,8 +247,8 @@
                         ${v.exitTime ? `<span class="text-gray-300"> - </span><span class="text-red-500">${new Date(v.exitTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>` : ''}
                     </td>
                     <td class="px-3 py-1 text-right flex gap-1 justify-end">
-                        <button onclick="editVisit('${v.id}')" class="text-blue-400 hover:text-blue-600"><i data-lucide="edit-3" class="w-3 h-3"></i></button>
-                        <button onclick="deleteVisit('${v.id}')" class="text-gray-300 hover:text-red-500"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                        <button onclick="editVisit('${v.id}')" class="text-blue-400 hover:text-blue-600 p-1"><i data-lucide="edit-3" class="w-3 h-3"></i></button>
+                        <button onclick="deleteVisit('${v.id}')" class="text-gray-300 hover:text-red-500 p-1"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -232,11 +261,17 @@
             document.getElementById('entry-form').addEventListener('submit', saveVisit);
             document.getElementById('v-doc').addEventListener('input', handleDocLookup);
 
-            ['search-filter', 'search-host'].forEach(id => {
+            ['search-filter', 'search-host', 'search-date-start', 'search-date-end'].forEach(id => {
                 document.getElementById(id).addEventListener('input', renderReportTable);
             });
 
-            document.getElementById('current-date').innerText = new Date().toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+            const updateClock = () => {
+                const now = new Date();
+                document.getElementById('current-date').innerText = now.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+                document.getElementById('current-time').innerText = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            };
+            setInterval(updateClock, 1000);
+            updateClock();
             
             Object.assign(window, { 
                 showTab: (tabId) => {
@@ -263,6 +298,7 @@
                     document.getElementById('btn-cancel-edit').classList.remove('hidden');
                     
                     showTab('entry-management');
+                    document.getElementById('v-name').focus();
                 },
                 cancelEdit: () => {
                     editingId = null;
@@ -272,13 +308,56 @@
                     document.getElementById('btn-cancel-edit').classList.add('hidden');
                 },
                 markExit: async (id) => {
-                    const docRef = doc(db, 'artifacts', internalAppId, 'public', 'data', 'visits', id);
-                    await updateDoc(docRef, { status: 'finished', exitTime: new Date().toISOString() });
+                    try {
+                        const docRef = doc(db, 'artifacts', internalAppId, 'public', 'data', 'visits', id);
+                        await updateDoc(docRef, { status: 'finished', exitTime: new Date().toISOString() });
+                    } catch (e) { console.error(e); }
                 }, 
                 deleteVisit: async (id) => {
-                    if (confirm("¿Eliminar registro permanentemente?")) {
-                        await deleteDoc(doc(db, 'artifacts', internalAppId, 'public', 'data', 'visits', id));
+                    if (confirm("¿Eliminar registro permanentemente del historial?")) {
+                        try {
+                            await deleteDoc(doc(db, 'artifacts', internalAppId, 'public', 'data', 'visits', id));
+                        } catch (e) { console.error(e); }
                     }
+                },
+                exportToExcel: () => {
+                    const search = (document.getElementById('search-filter')?.value || "").toLowerCase();
+                    const host = (document.getElementById('search-host')?.value || "").toLowerCase();
+                    const dateStart = document.getElementById('search-date-start')?.value;
+                    const dateEnd = document.getElementById('search-date-end')?.value;
+
+                    const filteredData = visits.filter(v => {
+                        const mName = (v.name || "").toLowerCase().includes(search) || (v.document || "").includes(search);
+                        const mHost = (v.host || "").toLowerCase().includes(host);
+                        let mDate = true;
+                        if (dateStart || dateEnd) {
+                            const vDate = v.entryTime.split('T')[0];
+                            if (dateStart && vDate < dateStart) mDate = false;
+                            if (dateEnd && vDate > dateEnd) mDate = false;
+                        }
+                        return mName && mHost && mDate;
+                    }).map(v => ({
+                        'Nombre': v.name,
+                        'Documento': v.document,
+                        'Empresa': v.company,
+                        'Vehículo': v.vehicle,
+                        'Anfitrión': v.host,
+                        'Motivo': v.reason,
+                        'Fecha Ingreso': new Date(v.entryTime).toLocaleDateString(),
+                        'Hora Ingreso': new Date(v.entryTime).toLocaleTimeString(),
+                        'Hora Salida': v.exitTime ? new Date(v.exitTime).toLocaleTimeString() : 'N/A',
+                        'Estado': v.status === 'active' ? 'EN PLANTA' : 'FINALIZADO'
+                    }));
+
+                    if (filteredData.length === 0) {
+                        alert("No hay datos para exportar con los filtros actuales.");
+                        return;
+                    }
+
+                    const ws = XLSX.utils.json_to_sheet(filteredData);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Visitas");
+                    XLSX.writeFile(wb, `Reporte_Accesos_${new Date().toISOString().split('T')[0]}.xlsx`);
                 }
             });
             
@@ -291,171 +370,227 @@
         body { font-family: 'Inter', sans-serif; }
         .tab-content { animation: fadeIn 0.1s ease-out; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        input, button, .card { border-radius: 2px; }
-        ::-webkit-scrollbar { width: 4px; }
+        
+        /* Priorizando bordes rectos y compactos */
+        input, button, .card, select, textarea { border-radius: 2px !important; }
+        
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        
+        .sidebar-item { border-radius: 0 !important; }
     </style>
 </head>
 <body class="bg-gray-100 text-slate-900 overflow-hidden">
 
-    <!-- Login -->
     <div id="login-screen" class="fixed inset-0 bg-slate-900 flex items-center justify-center z-[100] px-4">
-        <div class="bg-white w-full max-w-sm p-8 shadow-2xl">
+        <div class="bg-white w-full max-w-sm p-8 shadow-2xl border-t-4 border-blue-600">
             <div class="text-center mb-6">
-                <div class="w-10 h-10 bg-blue-600 mx-auto flex items-center justify-center mb-3">
-                    <i data-lucide="shield-check" class="text-white w-6 h-6"></i>
+                <div class="w-12 h-12 bg-blue-600 mx-auto flex items-center justify-center mb-4">
+                    <i data-lucide="shield-check" class="text-white w-7 h-7"></i>
                 </div>
-                <h1 class="text-lg font-black text-slate-800">SECURE ACCESS PRO</h1>
-                <p class="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">Control de Vigilancia</p>
+                <h1 class="text-xl font-black text-slate-800 tracking-tight">AEV SEGURIDAD</h1>
+                <p class="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">SISTEMA DE CONTROL CRÍTICO</p>
             </div>
-            <form id="login-form" class="space-y-3">
-                <input type="email" id="login-email" required class="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 outline-none text-xs" placeholder="Usuario / Email">
-                <input type="password" id="login-pass" required class="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 outline-none text-xs" placeholder="Contraseña">
-                <div id="login-error" class="hidden text-red-500 text-[10px] font-bold bg-red-50 p-2 text-center"></div>
-                <button type="submit" class="w-full bg-slate-800 text-white font-bold py-3 hover:bg-slate-700 text-[10px] uppercase tracking-widest">Iniciar Sesión</button>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="text-[9px] font-bold text-gray-400 uppercase block mb-1">Identificación de Usuario</label>
+                    <input type="email" id="login-email" required class="w-full px-3 py-3 bg-gray-50 border border-gray-200 outline-none text-xs focus:border-blue-500" placeholder="correo@ejemplo.com">
+                </div>
+                <div>
+                    <label class="text-[9px] font-bold text-gray-400 uppercase block mb-1">Clave de Acceso</label>
+                    <input type="password" id="login-pass" required class="w-full px-3 py-3 bg-gray-50 border border-gray-200 outline-none text-xs focus:border-blue-500" placeholder="••••••••">
+                </div>
+                <div id="login-error" class="hidden text-red-500 text-[10px] font-bold bg-red-50 p-2 text-center border border-red-100"></div>
+                <button type="submit" class="w-full bg-slate-800 text-white font-bold py-4 hover:bg-slate-700 text-[11px] uppercase tracking-widest transition-all">Autenticar Entrada</button>
             </form>
+            <p class="mt-6 text-center text-[9px] text-gray-400">Acceso restringido a personal autorizado.</p>
         </div>
     </div>
 
-    <!-- App -->
-    <div id="main-app" class="hidden flex h-screen">
-        <aside class="w-40 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-700 shrink-0">
-            <div class="p-3 border-b border-slate-800 text-center">
-                <span class="text-[10px] font-black text-white tracking-tighter uppercase italic">Secure Pro</span>
+    <div id="main-app" class="hidden flex h-screen overflow-hidden">
+        <!-- Sidebar Compacto -->
+        <aside class="w-44 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-700 shrink-0">
+            <div class="p-4 border-b border-slate-800 bg-slate-950 flex flex-col items-center">
+                <i data-lucide="shield-half" class="w-6 h-6 text-blue-500 mb-2"></i>
+                <span class="text-[11px] font-black text-white tracking-widest uppercase italic">AEVSEGURIDAD</span>
             </div>
-            <nav class="flex-1 p-1 space-y-0.5">
-                <button onclick="showTab('dashboard')" id="btn-dashboard" class="sidebar-item w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase transition-all">
-                    <i data-lucide="layout" class="w-3 h-3"></i> Panel
+            <nav class="flex-1 p-2 space-y-1">
+                <button onclick="showTab('dashboard')" id="btn-dashboard" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
+                    <i data-lucide="layout-grid" class="w-4 h-4"></i> Inicio
                 </button>
-                <button onclick="showTab('entry-management')" id="btn-entry-management" class="sidebar-item w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase transition-all">
-                    <i data-lucide="user-plus" class="w-3 h-3"></i> Accesos
+                <button onclick="showTab('entry-management')" id="btn-entry-management" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
+                    <i data-lucide="user-plus" class="w-4 h-4"></i> Nuevo Registgro
                 </button>
-                <button onclick="showTab('today-logs')" id="btn-today-logs" class="sidebar-item w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase transition-all">
-                    <i data-lucide="list" class="w-3 h-3"></i> Hoy
+                <button onclick="showTab('today-logs')" id="btn-today-logs" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
+                    <i data-lucide="clock" class="w-4 h-4"></i> Bitácora Hoy
                 </button>
-                <button onclick="showTab('reports')" id="btn-reports" class="sidebar-item w-full flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase transition-all">
-                    <i data-lucide="file-text" class="w-3 h-3"></i> Historial
+                <button onclick="showTab('reports')" id="btn-reports" class="sidebar-item w-full flex items-center gap-3 px-3 py-2.5 text-[10px] font-bold uppercase transition-all hover:bg-slate-800">
+                    <i data-lucide="database" class="w-4 h-4"></i> Historial
                 </button>
             </nav>
-            <div class="p-2 bg-slate-800/50 border-t border-slate-700 text-center">
-                <p id="user-email-display" class="text-[8px] truncate text-slate-500 mb-2 font-mono"></p>
-                <button id="logout-btn" class="w-full text-red-400 py-1 text-[9px] font-bold uppercase hover:bg-red-900/20">Salir</button>
+            <div class="p-3 bg-slate-950/50 border-t border-slate-800">
+                <p id="user-email-display" class="text-[9px] truncate text-slate-500 mb-3 font-mono text-center"></p>
+                <button id="logout-btn" class="w-full text-red-400 py-2 border border-red-900/30 text-[10px] font-bold uppercase hover:bg-red-900/20 transition-colors">Cerrar Sesión</button>
             </div>
         </aside>
 
+        <!-- Main Area -->
         <main class="flex-1 flex flex-col overflow-hidden bg-white">
-            <header class="bg-white border-b h-8 flex justify-between items-center px-4 shrink-0">
-                <h2 id="current-tab-title" class="text-[10px] font-black uppercase text-slate-400">...</h2>
-                <div class="flex items-center gap-4">
-                    <span id="current-date" class="text-[9px] font-bold text-slate-400"></span>
-                    <div class="flex items-center gap-1 text-[8px] font-bold text-green-600 uppercase">
-                        <div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Online
+            <header class="bg-white border-b h-10 flex justify-between items-center px-4 shrink-0">
+                <div class="flex items-center gap-2">
+                <!--    <div class="w-2 h-2 bg-blue-600"></div>
+                    <h2 id="current-tab-title" class="text-[11px] font-black uppercase text-slate-600 tracking-tighter">CARGANDO...</h2>-->
+                </div>
+                <div class="flex items-center gap-6">
+                    <div class="flex flex-col items-end leading-tight">
+                        <span id="current-date" class="text-[9px] font-bold text-slate-400 uppercase"></span>
+                        <span id="current-time" class="text-[12px] font-black text-slate-700 font-mono tracking-tighter"></span>
+                    </div>
+                    <div class="flex items-center gap-2 text-[9px] font-bold text-green-600 uppercase bg-green-50 px-2 py-0.5 border border-green-100">
+                        <div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Servidor Activo
                     </div>
                 </div>
             </header>
 
-            <div class="flex-1 overflow-y-auto p-3 space-y-3">
-                <!-- Panel -->
-                <div id="dashboard" class="tab-content grid grid-cols-3 gap-2">
-                    <div class="bg-gray-50 p-3 border border-gray-100">
-                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">En Planta</p>
-                        <h3 id="stat-active" class="text-2xl font-black text-blue-600 leading-none mt-1">0</h3>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                
+                <!-- Panel Central -->
+                <div id="dashboard" class="tab-content grid grid-cols-3 gap-3">
+                    <div class="bg-blue-50 p-4 border border-blue-100 relative overflow-hidden">
+                        <i data-lucide="users" class="absolute -right-2 -bottom-2 w-16 h-16 text-blue-200/50"></i>
+                        <p class="text-[9px] font-black text-blue-400 uppercase tracking-widest">En Oficinas</p>
+                        <h3 id="stat-active" class="text-3xl font-black text-blue-700 leading-none mt-2">0</h3>
                     </div>
-                    <div class="bg-gray-50 p-3 border border-gray-100">
-                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Entradas Hoy</p>
-                        <h3 id="stat-today" class="text-2xl font-black text-slate-800 leading-none mt-1">0</h3>
+                    <div class="bg-slate-50 p-4 border border-slate-200 relative overflow-hidden">
+                        <i data-lucide="list-checks" class="absolute -right-2 -bottom-2 w-16 h-16 text-slate-200/50"></i>
+                        <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest">Entradas Hoy</p>
+                        <h3 id="stat-today" class="text-3xl font-black text-slate-800 leading-none mt-2">0</h3>
                     </div>
-                    <div class="bg-gray-50 p-3 border border-gray-100">
-                        <p class="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Vehículos</p>
-                        <h3 id="stat-vehicles" class="text-2xl font-black text-amber-600 leading-none mt-1">0</h3>
+                    <div class="bg-amber-50 p-4 border border-amber-100 relative overflow-hidden">
+                        <i data-lucide="truck" class="absolute -right-2 -bottom-2 w-16 h-16 text-amber-200/50"></i>
+                        <p class="text-[9px] font-black text-amber-400 uppercase tracking-widest">Vehículos</p>
+                        <h3 id="stat-vehicles" class="text-3xl font-black text-amber-700 leading-none mt-2">0</h3>
                     </div>
                 </div>
 
-                <!-- Gestion de Accesos -->
-                <div id="entry-management" class="tab-content hidden grid grid-cols-12 gap-3">
-                    <div class="col-span-12 lg:col-span-5 bg-white border border-gray-200 p-3">
-                        <div class="flex justify-between items-center mb-3">
-                            <h3 id="form-title" class="text-[9px] font-black uppercase text-slate-500">Registro de Acceso</h3>
-                            <button id="btn-cancel-edit" onclick="cancelEdit()" class="hidden text-red-500 text-[8px] font-bold uppercase hover:underline">Cancelar Edición</button>
+                <!-- Gestión de Accesos (Formulario + Lista Activa) -->
+                <div id="entry-management" class="tab-content hidden grid grid-cols-12 gap-4">
+                    <!-- Formulario -->
+                    <div class="col-span-12 lg:col-span-5 bg-white border border-gray-300 p-4 shadow-sm">
+                        <div class="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                            <h3 id="form-title" class="text-[11px] font-black uppercase text-slate-700">Registro de Acceso</h3>
+                            <button id="btn-cancel-edit" onclick="cancelEdit()" class="hidden text-red-500 text-[9px] font-bold uppercase hover:underline">Cancelar Edición</button>
                         </div>
-                        <form id="entry-form" class="space-y-2">
-                            <div class="grid grid-cols-2 gap-2">
+                        <form id="entry-form" class="space-y-3">
+                            <div class="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label class="text-[8px] font-bold text-gray-400 uppercase">CI / DNI</label>
-                                    <input type="text" id="v-doc" required class="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 text-xs font-bold outline-none focus:border-blue-400" placeholder="Doc.">
+                                    <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">CI <span class="text-blue-500 text-[8px]">(Auto-busqueda)</span></label>
+                                    <input type="text" id="v-doc" required class="w-full px-3 py-2 bg-gray-50 border border-gray-300 text-xs font-bold outline-none focus:border-blue-500 transition-all" placeholder="Documento...">
                                 </div>
                                 <div>
-                                    <label class="text-[8px] font-bold text-gray-400 uppercase">Empresa</label>
-                                    <input type="text" id="v-company" class="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 text-xs outline-none" placeholder="Opcional">
-                                </div>
-                            </div>
-                            <div>
-                                <label class="text-[8px] font-bold text-gray-400 uppercase">Nombre Completo</label>
-                                <input type="text" id="v-name" required class="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 text-xs outline-none uppercase" placeholder="Nombre">
-                            </div>
-                            <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="text-[8px] font-bold text-gray-400 uppercase">Placa</label>
-                                    <input type="text" id="v-vehicle" class="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 text-xs outline-none uppercase" placeholder="Ej: ABC-123">
-                                </div>
-                                <div>
-                                    <label class="text-[8px] font-bold text-gray-400 uppercase">Anfitrión</label>
-                                    <input type="text" id="v-host" required class="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 text-xs font-bold text-blue-800 outline-none uppercase" placeholder="¿A quién?">
+                                    <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Empresa / Institución</label>
+                                    <input type="text" id="v-company" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 text-xs outline-none focus:border-blue-500 uppercase" placeholder="Empresa...">
                                 </div>
                             </div>
                             <div>
-                                <label class="text-[8px] font-bold text-gray-400 uppercase">Observación</label>
-                                <textarea id="v-reason" class="w-full px-2 py-1 bg-gray-50 border border-gray-200 text-xs outline-none h-10" placeholder="Motivo..."></textarea>
+                                <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Nombre Completo del Visitante</label>
+                                <input type="text" id="v-name" required class="w-full px-3 py-2 bg-gray-50 border border-gray-300 text-xs outline-none focus:border-blue-500 uppercase font-bold" placeholder="Nombre completo">
                             </div>
-                            <button type="submit" id="btn-submit" class="w-full bg-blue-600 text-white font-black py-2 text-[10px] uppercase tracking-widest hover:bg-blue-700 mt-1">Confirmar Entrada</button>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Placa Vehículo</label>
+                                    <input type="text" id="v-vehicle" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 text-xs outline-none focus:border-blue-500 uppercase font-mono" placeholder="Opcional">
+                                </div>
+                                <div>
+                                    <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Oficinas / Destino</label>
+                                    <input type="text" id="v-host" required class="w-full px-3 py-2 bg-blue-50 border border-blue-200 text-xs font-bold text-blue-900 outline-none focus:border-blue-500 uppercase" placeholder="¿A quién visita?">
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-bold text-gray-500 uppercase block mb-1">Motivo / Observación</label>
+                                <textarea id="v-reason" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 text-xs outline-none focus:border-blue-500 h-16 resize-none" placeholder="Indique el motivo de ingreso..."></textarea>
+                            </div>
+                            <button type="submit" id="btn-submit" class="w-full bg-blue-600 text-white font-black py-3 text-[11px] uppercase tracking-widest hover:bg-blue-700 transition-all mt-2 shadow-md active:scale-[0.98]">Confirmar Registro</button>
                         </form>
                     </div>
-                    <div class="col-span-12 lg:col-span-7 border border-gray-200">
-                        <div class="bg-slate-50 p-1.5 border-b border-gray-200 text-[9px] font-black uppercase text-slate-500 tracking-widest">Personal en Planta</div>
-                        <div id="active-list-container" class="bg-white max-h-[320px] overflow-y-auto"></div>
+
+                    <!-- Lista Activos -->
+                    <div class="col-span-12 lg:col-span-7 border border-gray-300 bg-white shadow-sm flex flex-col">
+                        <div class="bg-slate-800 p-2 text-[10px] font-black uppercase text-white tracking-widest flex items-center gap-2">
+                            <i data-lucide="shield-check" class="w-3.5 h-3.5 text-blue-400"></i> VIsitantes Actualmente en Oficinas
+                        </div>
+                        <div id="active-list-container" class="flex-1 overflow-y-auto max-h-[420px]">
+                            <!-- Se llena por JS -->
+                        </div>
                     </div>
                 </div>
 
-                <!-- Hoy -->
-                <div id="today-logs" class="tab-content hidden border border-gray-200">
+                <!-- Hoy: Tabla Diaria -->
+                <div id="today-logs" class="tab-content hidden border border-gray-300 shadow-sm overflow-hidden">
                     <table class="w-full text-left">
-                        <thead class="bg-slate-50 text-[8px] uppercase font-bold text-slate-400 border-b">
+                        <thead class="bg-slate-100 text-[10px] uppercase font-black text-slate-500 border-b border-gray-300">
                             <tr>
-                                <th class="px-3 py-1.5">Visitante</th>
-                                <th class="px-3 py-1.5">Doc</th>
-                                <th class="px-3 py-1.5">Anfitrión</th>
-                                <th class="px-3 py-1.5">E/S</th>
-                                <th class="px-3 py-1.5 text-center w-8">St</th>
+                                <th class="px-4 py-2">Nombre Visitante</th>
+                                <th class="px-4 py-2">Documento</th>
+                                <th class="px-4 py-2 text-blue-700">Oficina</th>
+                                <th class="px-4 py-2">Horario E/S</th>
+                                <th class="px-4 py-2 text-center w-12">Estado</th>
                             </tr>
                         </thead>
-                        <tbody id="today-logs-table" class="divide-y divide-gray-50 bg-white"></tbody>
+                        <tbody id="today-logs-table" class="divide-y divide-gray-100 bg-white">
+                            <!-- Se llena por JS -->
+                        </tbody>
                     </table>
                 </div>
 
-                <!-- Historial -->
-                <div id="reports" class="tab-content hidden space-y-2">
-                    <div class="bg-white p-2 border border-gray-200 flex gap-2">
-                        <input type="text" id="search-filter" class="flex-1 p-1.5 bg-gray-50 border border-gray-200 text-[10px] outline-none" placeholder="Buscar Nombre o Doc...">
-                        <input type="text" id="search-host" class="flex-1 p-1.5 bg-gray-50 border border-gray-200 text-[10px] outline-none" placeholder="Buscar Anfitrión...">
+                <!-- Historial y Reportes -->
+                <div id="reports" class="tab-content hidden space-y-3">
+                    <div class="bg-slate-50 p-3 border border-gray-300 grid grid-cols-1 md:grid-cols-5 gap-3 shadow-inner">
+                        <div class="col-span-1 md:col-span-1">
+                            <label class="text-[9px] font-bold text-gray-400 uppercase block mb-1">Desde</label>
+                            <input type="date" id="search-date-start" class="w-full p-2 bg-white border border-gray-300 text-[11px] outline-none focus:border-blue-500">
+                        </div>
+                        <div class="col-span-1 md:col-span-1">
+                            <label class="text-[9px] font-bold text-gray-400 uppercase block mb-1">Hasta</label>
+                            <input type="date" id="search-date-end" class="w-full p-2 bg-white border border-gray-300 text-[11px] outline-none focus:border-blue-500">
+                        </div>
+                        <div class="col-span-1 md:col-span-1">
+                            <label class="text-[9px] font-bold text-gray-400 uppercase block mb-1">Nombre / CI</label>
+                            <input type="text" id="search-filter" class="w-full p-2 bg-white border border-gray-300 text-[11px] outline-none focus:border-blue-500" placeholder="Buscar...">
+                        </div>
+                        <div class="col-span-1 md:col-span-1">
+                            <label class="text-[9px] font-bold text-gray-400 uppercase block mb-1">Oficina</label>
+                            <input type="text" id="search-host" class="w-full p-2 bg-white border border-gray-300 text-[11px] outline-none focus:border-blue-500" placeholder="Buscar...">
+                        </div>
+                        <div class="col-span-1 md:col-span-1 flex items-end">
+                            <button onclick="exportToExcel()" class="w-full bg-green-700 text-white font-bold py-2 px-3 text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-green-800 transition-colors">
+                                <i data-lucide="download" class="w-3.5 h-3.5"></i> Exportar Excel
+                            </button>
+                        </div>
                     </div>
-                    <div class="border border-gray-200 overflow-hidden">
+                    <div class="border border-gray-300 shadow-sm overflow-x-auto">
                         <table class="w-full text-left">
-                            <thead class="bg-slate-50 text-[8px] uppercase text-slate-500 border-b font-bold">
+                            <thead class="bg-slate-100 text-[10px] uppercase text-slate-600 border-b border-gray-300 font-black">
                                 <tr>
-                                    <th class="px-3 py-1.5">Nombre</th>
-                                    <th class="px-3 py-1.5">Doc</th>
-                                    <th class="px-3 py-1.5">Anfitrión</th>
-                                    <th class="px-3 py-1.5">Fecha</th>
-                                    <th class="px-3 py-1.5">Horas</th>
-                                    <th class="px-3 py-1.5 w-12 text-right">Acción</th>
+                                    <th class="px-4 py-2">Nombre</th>
+                                    <th class="px-4 py-2">Documento</th>
+                                    <th class="px-4 py-2">Oficina</th>
+                                    <th class="px-4 py-2">Fecha</th>
+                                    <th class="px-4 py-2">Ingreso/Salida</th>
+                                    <th class="px-4 py-2 w-16 text-right">Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody id="report-table-body" class="divide-y divide-gray-50 bg-white"></tbody>
+                            <tbody id="report-table-body" class="divide-y divide-gray-100 bg-white">
+                                <!-- Se llena por JS -->
+                            </tbody>
                         </table>
                     </div>
                 </div>
+
             </div>
         </main>
     </div>
+
 </body>
 </html>
